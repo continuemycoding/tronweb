@@ -158,6 +158,145 @@ If you'd like to connect with tronlink app and chrome extention and develop a da
 
 If you'd like to develop only with tronweb dependency, you could run the demo in path demo/tronweb-demo.
 
+## other example
+```ts
+import moment from "moment";
+import TronWeb from 'tronweb';
+
+Date.prototype.toLocaleString = function () {
+    return (moment(this)).format('YYYY-MM-DD HH:mm:ss');
+};
+
+Date.prototype.toLocaleDateString = function () {
+    return (moment(this)).format('YYYY-MM-DD');
+};
+
+Date.prototype.toLocaleTimeString = function () {
+    return (moment(this)).format('HH:mm:ss');
+};
+
+const log = console.log;
+
+console.log = function () {
+    const argArray = [new Date().toLocaleString()];
+    for (let i = 0; i < arguments.length; i++)
+        argArray.push(arguments[i]);
+
+    log.apply(this, argArray);
+}.bind(console.log);
+
+const error = console.error;
+
+console.error = function () {
+    const argArray = [new Date().toLocaleString()];
+    for (let i = 0; i < arguments.length; i++)
+        argArray.push(arguments[i]);
+
+    error.apply(this, argArray);
+}.bind(console.error);
+
+// https://tronprotocol.github.io/documentation-zh/
+// https://tronscan.org/#/contract/TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t/transactions //mainnet USDT contract
+// https://developers.tron.network/reference/getblockbynumber 
+// https://developers.tron.network/reference/methodwatch
+
+const addressMap = {
+    "TM1zzNDZD2DPASbKcgdVoTYhfmYgtfwx9R": "Okex 1",
+    "TBA6CypYJizwA9XdC7Ubgc5F1bxrQ7SqPt": "Gate",
+    "TYyiYD6PD38gtsDHh9QYQPDnfZyQ6FSAPR": "Bitrue"
+};
+
+(async function () {
+
+    process.on('uncaughtException', function (e) {
+        console.error("uncaughtException\t", e.stack);
+    });
+
+    const tronWeb = new TronWeb({
+        fullHost: 'https://api.trongrid.io',
+        // headers: { "TRON-PRO-API-KEY": '25f66928-0b70-48cd-9ac6-da6f8247c663' },
+        // privateKey: '8e812436a0e3323166e1f0e8ba79e19e217b2c4a53c970d4cca0cfb1078979df'
+    });
+
+    const trc20ContractAddress = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"; //mainnet USDT contract
+
+    // const contract = await tronWeb.contract().at(trc20ContractAddress);
+    // await contract && contract.Transfer().watch((err, event) => {
+    //     if (err)
+    //         return console.error('Error with "Message" event:', err);
+
+    //     console.group('New event received');
+    //     console.log('- Contract Address:', event.contract);
+    //     console.log('- Event Name:', event.name);
+    //     console.log('- Transaction:', event.transaction);
+    //     console.log('- Block number:', event.block);
+    //     event.result.from = TronWeb.address.fromHex(event.result.from);
+    //     event.result.to = TronWeb.address.fromHex(event.result.to);
+    //     console.log('- Result:', event.result, '\n');
+    //     console.groupEnd();
+    // });
+
+    let lastBlockNumber = 38379902;//从数据库读取最后一次检测完成的区块编号
+
+    while (true) {
+        const currentBlock = await tronWeb.trx.getCurrentBlock();
+        const currentBlockNumber = currentBlock.block_header.raw_data.number;
+
+        while (lastBlockNumber < currentBlockNumber) {
+            const block = await tronWeb.trx.getBlockByNumber(lastBlockNumber + 1);
+
+            if (!block.transactions)
+                continue;
+
+            console.log("正在处理区块数据", block.block_header.raw_data.number, new Date(block.block_header.raw_data.timestamp).toLocaleString());
+
+            for (let i = 0; i < block.transactions.length; i++) {
+                const transaction = block.transactions[i];
+
+                const type = transaction.raw_data.contract[0].type;
+
+                if (type == "TransferContract") {
+                    const parameter = transaction.raw_data.contract[0].parameter.value;
+                    // const owner_address = TronWeb.address.fromHex(parameter.owner_address);//付款方
+                    const to_address = TronWeb.address.fromHex(parameter.to_address);//收款方
+
+                    const account = addressMap[to_address];
+                    if (!account)
+                        continue;
+
+                    const amount = parameter.amount;//数额
+                    console.log(`${to_address}(${account}) 充值${amount / 1000000}TRX ${transaction.txID}`);
+
+                    // const transactionInfo = await tronWeb.trx.getTransactionInfo(transaction.txID);
+                    // console.log(transactionInfo);
+                }
+                else if (type == "TriggerSmartContract") {
+                    const parameter = transaction.raw_data.contract[0].parameter.value;
+                    const contract_address = TronWeb.address.fromHex(parameter.contract_address);
+
+                    if (contract_address != trc20ContractAddress)
+                        continue;
+
+                    // const owner_address = TronWeb.address.fromHex(parameter.owner_address);//付款方
+                    const to_address = TronWeb.address.fromHex(parameter.data.substring(8 + 24 - 2, 64 + 8));//收款方
+                    const account = addressMap[to_address];
+                    if (!account)
+                        continue;
+
+                    const amount = parseInt(parameter.data.substring(64 + 8), 16);//数额
+                    console.log(`${to_address}(${account}) 充值${amount / 1000000}USDT ${transaction.txID}`);
+                }
+            }
+
+            lastBlockNumber++;
+
+            // 最后一次检测完成的区块编号需要写入数据库
+        }
+    }
+
+})();
+```
+
 ## Contributions
 
 In order to contribute you can
